@@ -1,0 +1,79 @@
+name: Build and deploy to dev AKS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: dev-aks-deploy
+  cancel-in-progress: false
+
+env:
+  IMAGE_NAME: shop-api
+  K8S_NAMESPACE: shop
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login using GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Read Terraform outputs
+        id: tf
+        shell: bash
+        run: |
+          terraform -chdir=terraform init -input=false
+          echo "acr_name=$(terraform -chdir=terraform output -raw acr_name)" >> "$GITHUB_OUTPUT"
+          echo "acr_login_server=$(terraform -chdir=terraform output -raw acr_login_server)" >> "$GITHUB_OUTPUT"
+          echo "rg=$(terraform -chdir=terraform output -raw resource_group_name)" >> "$GITHUB_OUTPUT"
+          echo "aks=$(terraform -chdir=terraform output -raw aks_name)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push container image
+        env:
+          ACR_NAME: ${{ steps.tf.outputs.acr_name }}
+          ACR_SERVER: ${{ steps.tf.outputs.acr_login_server }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          az acr login --name "$ACR_NAME"
+          docker build -t "$ACR_SERVER/$IMAGE_NAME:$IMAGE_TAG" ./app
+          docker push "$ACR_SERVER/$IMAGE_NAME:$IMAGE_TAG"
+
+      - name: Get AKS credentials
+        run: az aks get-credentials --resource-group "${{ steps.tf.outputs.rg }}" --name "${{ steps.tf.outputs.aks }}" --overwrite-existing
+
+      - name: Deploy manifests
+        env:
+          ACR_SERVER: ${{ steps.tf.outputs.acr_login_server }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          kubectl create namespace "$K8S_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+          sed -e "s|IMAGE_PLACEHOLDER|$ACR_SERVER/$IMAGE_NAME:$IMAGE_TAG|g" \
+              -e "s|IMAGE_TAG_PLACEHOLDER|$IMAGE_TAG|g" \
+              k8s/deployment.yaml | kubectl apply -f -
+          kubectl rollout status deployment/shop-api -n "$K8S_NAMESPACE" --timeout=180s
+          kubectl get pods,svc -n "$K8S_NAMESPACE"
+
+      - name: Smoke test service
+        run: |
+          kubectl port-forward -n "$K8S_NAMESPACE" svc/shop-api 18080:80 > /tmp/pf.log 2>&1 &
+          PF_PID=$!
+          trap 'kill "$PF_PID" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18080/healthz; then exit 0; fi
+            sleep 2
+          done
+          cat /tmp/pf.log
+          exit 1
