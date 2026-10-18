@@ -37,11 +37,22 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.9.8"
+          terraform_wrapper: false
       - run: terraform -chdir=terraform fmt -check -recursive
       - run: terraform -chdir=terraform init -input=false
+        env:
+          ARM_CLIENT_ID: ${{ fromJson(secrets.SERVICE_PRINCIPAL).clientId }}
+          ARM_CLIENT_SECRET: ${{ fromJson(secrets.SERVICE_PRINCIPAL).clientSecret }}
+          ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.SERVICE_PRINCIPAL).subscriptionId }}
+          ARM_TENANT_ID: ${{ fromJson(secrets.SERVICE_PRINCIPAL).tenantId }}
       - run: terraform -chdir=terraform validate
       - name: Terraform Plan
         run: terraform -chdir=terraform plan -var-file=dev.tfvars -input=false -no-color
+        env:
+          ARM_CLIENT_ID: ${{ fromJson(secrets.SERVICE_PRINCIPAL).clientId }}
+          ARM_CLIENT_SECRET: ${{ fromJson(secrets.SERVICE_PRINCIPAL).clientSecret }}
+          ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.SERVICE_PRINCIPAL).subscriptionId }}
+          ARM_TENANT_ID: ${{ fromJson(secrets.SERVICE_PRINCIPAL).tenantId }}
 
       - name: Scan filesystem and IaC
         uses: aquasecurity/trivy-action@0.28.0

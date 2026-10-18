@@ -15,7 +15,7 @@ terraform {
     storage_account_name = "stshoplabdevtfstate"
     container_name       = "tfstate"
     key                  = "dev.terraform.tfstate"
-    use_oidc             = false
+    use_azure_cli        = true
   }
 }
 
