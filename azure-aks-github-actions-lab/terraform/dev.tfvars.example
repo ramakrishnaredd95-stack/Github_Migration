@@ -1,8 +1,0 @@
-subscription_id    = "16d60876-2016-4013-9895-cc00224e539c"
-location           = "canadacentral"
-project            = "shoplab"
-environment        = "dev"
-node_count         = 1
-node_vm_size       = "Standard_D2s_v5"
-# Set kubernetes_version only to a version currently supported in your region.
-# For a low-cost lab, create resources only while practicing and destroy them afterward.

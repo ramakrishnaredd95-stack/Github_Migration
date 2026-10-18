@@ -1,9 +1,0 @@
-.terraform/
-*.tfstate
-*.tfstate.*
-*.tfplan
-crash.log
-terraform.tfvars
-.env
-__pycache__/
-.venv/
