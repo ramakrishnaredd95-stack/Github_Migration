@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: dev-aks-deploy
@@ -24,12 +23,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Azure login using GitHub OIDC
+      - name: Azure login
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          creds: ${{ secrets.SERVICE_PRINCIPAL }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
 
       - name: Read Terraform outputs
         id: tf
@@ -52,7 +54,11 @@ jobs:
           docker push "$ACR_SERVER/$IMAGE_NAME:$IMAGE_TAG"
 
       - name: Get AKS credentials
-        run: az aks get-credentials --resource-group "${{ steps.tf.outputs.rg }}" --name "${{ steps.tf.outputs.aks }}" --overwrite-existing
+        run: |
+          az aks get-credentials \
+            --resource-group "${{ steps.tf.outputs.rg }}" \
+            --name "${{ steps.tf.outputs.aks }}" \
+            --overwrite-existing
 
       - name: Deploy manifests
         env:
